@@ -108,5 +108,5 @@ void loop() {
   u8g2.drawStr(0, 30, buf);
   u8g2.sendBuffer();
 
-  delay(10 * 60 * 1000); // delay in between reads for stability
+  delay(600000); // delay in between reads for stability
 }
