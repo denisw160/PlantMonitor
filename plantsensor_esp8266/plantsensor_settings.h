@@ -13,3 +13,4 @@ const int   MQTT_PORT      = 1883;
 const char *MQTT_USER      = "";
 const char *MQTT_PASSWORD  = "";
 const char *MQTT_TOPIC     = "me/wirries/plantsensor";
+const char *MQTT_FPRINT    = "36:6C:A5:A4:A4:3C:CC:56:C4:08:4E:D0:58:A6:9A:A0:44:18:9B:BE";

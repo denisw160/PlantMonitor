@@ -64,8 +64,9 @@ int mV;
 float m, t, tV, h, hV, p, pV;
 
 // MQTT client
-WiFiClient wiFiClient;
-PubSubClient mqttClient(wiFiClient);
+//WiFiClient wiFiClient; // for unencrypted
+BearSSL::WiFiClientSecure wifiClient; // for encrypted with SSL
+PubSubClient mqttClient(wifiClient);
 
 // MQTT values
 String mqttId = "PlantSensor";
@@ -154,11 +155,12 @@ void loop() {
   Serial.print("WiFi connection status: ");
   Serial.println(WiFi.status());
   if (WiFi.status() == WL_CONNECTED) {
+    verifyConnection(); // for encrypted with SSL
     sendSensorData();
   }
 
-  //delay(30000);   // wait 30 sec (production)
-  delay(5000);   // wait 5 sec (for testing)
+  delay(30000);   // wait 30 sec (production)
+  //delay(5000);   // wait 5 sec (for testing)
 }
 
 void readSensors() {
@@ -190,6 +192,32 @@ void readSensors() {
   Serial.println(pV);
   Serial.print("Pressure (offset): ");
   Serial.println(p);
+}
+
+void verifyConnection() {
+  if (mqttClient.connected() || wifiClient.connected()) return; // Already connected
+
+  Serial.print("Checking SSL@");
+  Serial.print(MQTT_SERVER);
+  Serial.print("...");
+
+  wifiClient.setInsecure();
+  if (!wifiClient.connect(MQTT_SERVER, MQTT_PORT)) {
+    Serial.println("failed.");
+    return;
+  } else {
+    Serial.println("ok.");
+  }
+  if (wifiClient.verify(MQTT_FPRINT, MQTT_SERVER)) {
+    Serial.println("Connection is secure.");
+  } else {
+    Serial.println("Connection insecure! Rebooting.");
+    Serial.flush();
+    ESP.restart();
+  }
+
+  wifiClient.stop();
+  delay(100);
 }
 
 void sendSensorData() {
