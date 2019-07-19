@@ -58,6 +58,9 @@ int page = 0;
 int mV;
 float m, t, tV, h, hV, p, pV;
 
+// MQTT values
+String mqttId;
+
 void setup() {
   // Initalize serial communicaton at 115200 bits per second
   Serial.begin(115200);
@@ -66,6 +69,8 @@ void setup() {
   // Initalize oled display
   u8g2.begin();
   u8g2.enableUTF8Print();
+
+  // Show startup message
   u8g2.clearBuffer();                 // clear the internal memory
   u8g2.setFont(u8g2_font_crox4hb_tf); // choose a suitable font
   u8g2.drawStr(0, 23, "Booting...");  // write something to the internal memory
@@ -98,12 +103,16 @@ void setup() {
   }
   if (WiFi.status() == WL_CONNECTED) {
     Serial.println("done!");
+    Serial.print("Hostname: ");
+    Serial.println(WiFi.hostname());
     Serial.print("WiFi IP-Adress: ");
     Serial.println(WiFi.localIP());
   }
   else {
     Serial.println("failed!");
   }
+  // Set MQTT ID
+  mqttId = "PlantSensor_" + WiFi.hostname();
 }
 
 void loop() {
@@ -131,8 +140,8 @@ void loop() {
     sendSensorData();
   }
 
-  delay(30000);   // wait 30 sec (production)
-  //delay(1000);   // wait 1 sec (for testing)
+  //delay(30000);   // wait 30 sec (production)
+  delay(5000);   // wait 5 sec (for testing)
 }
 
 void readSensors() {
