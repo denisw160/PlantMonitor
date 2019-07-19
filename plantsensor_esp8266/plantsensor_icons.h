@@ -1,5 +1,5 @@
 //
-// This file contains the icons for the display
+// This file contains the icons.
 //
 
 #define ICON_WIDTH    32

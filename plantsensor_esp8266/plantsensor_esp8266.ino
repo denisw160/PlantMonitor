@@ -7,6 +7,7 @@
 #include <U8g2lib.h>
 
 #include "plantsensor_icons.h"
+#include "plantsensor_settings.h"
 
 
 // PlantSensor for the PlantMonitor
@@ -25,7 +26,6 @@
 // SCL -> D1
 
 // TODO
-// - Add WiFi and MQTT support
 // - Improve configuration via WiFiManager
 
 
@@ -51,8 +51,12 @@ const float PRESSURE_OFFSET = 0.0;
 // BME Sensor
 Adafruit_BME280 bme; // I2C
 
-// variable for page selection
+// Page selection
 int page = 0;
+
+// Sensor values
+int mV;
+float m, t, tV, h, hV, p, pV;
 
 void setup() {
   // Initalize serial communicaton at 115200 bits per second
@@ -62,10 +66,10 @@ void setup() {
   // Initalize oled display
   u8g2.begin();
   u8g2.enableUTF8Print();
-  u8g2.clearBuffer();                  // clear the internal memory
-  u8g2.setFont(u8g2_font_bubble_tr);  // choose a suitable font
-  u8g2.drawStr(0, 25, "Booting");   // write something to the internal memory
-  u8g2.sendBuffer();                   // transfer internal memory to the display
+  u8g2.clearBuffer();                 // clear the internal memory
+  u8g2.setFont(u8g2_font_crox4hb_tf); // choose a suitable font
+  u8g2.drawStr(0, 23, "Booting...");  // write something to the internal memory
+  u8g2.sendBuffer();                  // transfer internal memory to the display
   delay(1000);
 
   // Initalize bme pins
@@ -76,16 +80,37 @@ void setup() {
     Serial.println("Could not find a valid BME280 sensor, check wiring!");
     while (1);
   }
+
+  // Connecting to WiFi
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  Serial.print("Connecting to WiFi...");
+
+  u8g2.clearDisplay();
+  u8g2.setFont(u8g2_font_crox4hb_tf);
+  u8g2.drawStr(0, 23, "Connecting...");
+  u8g2.sendBuffer();
+  int c = 0;
+  while (WiFi.status() != WL_CONNECTED && c < 50)
+  {
+    delay(500);
+    Serial.print(".");
+    c = c + 1;
+  }
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("done!");
+    Serial.print("WiFi IP-Adress: ");
+    Serial.println(WiFi.localIP());
+  }
+  else {
+    Serial.println("failed!");
+  }
 }
 
 void loop() {
+  readSensors();
+
   Serial.print("Show next page: ");
   Serial.println(page);
-  //Serial.print("WiFi connection status: ");
-  //Serial.println(WiFi.status());
-  // Check WiFi connection status
-  //WiFi.status() == WL_CONNECTED
-
   if (page == 0) {
     showPageMoisture();
     page = 1;
@@ -100,20 +125,52 @@ void loop() {
     page = 0;
   }
 
-  //delay(30000);   // wait 30 sec (production)
-  delay(1000);   // wait 1 sec (for testing)
+  Serial.print("WiFi connection status: ");
+  Serial.println(WiFi.status());
+  if (WiFi.status() == WL_CONNECTED) {
+    sendSensorData();
+  }
+
+  delay(30000);   // wait 30 sec (production)
+  //delay(1000);   // wait 1 sec (for testing)
 }
 
-void showPageMoisture() {
+void readSensors() {
   // Moisture Sensor
   // Read the input on analog pin 0
-  int mV = analogRead(MOISTURE_ANALOG);
-  float m = max(100.0 - (mV / MOISTURE_MAX) * 100.0, 0.0);
+  mV = analogRead(MOISTURE_ANALOG);
+  m = max(100.0 - (mV / MOISTURE_MAX) * 100.0, 0.0);
   Serial.print("Moisture: ");
   Serial.println(mV);
   Serial.print("Moisture (%): ");
   Serial.println(m);
 
+  // BME280
+  tV = bme.readTemperature();
+  t = tV - TEMPERATURE_OFFSET;
+  Serial.print("Temperature: ");
+  Serial.println(tV);
+  Serial.print("Temperature (offset): ");
+  Serial.println(t);
+  hV = bme.readHumidity();
+  h = hV - HUMIDITY_OFFSET;
+  Serial.print("Humidity: ");
+  Serial.println(hV);
+  Serial.print("Humidity (offeset): ");
+  Serial.println(h);
+  pV = bme.readPressure() / 100.F;
+  p = pV - PRESSURE_OFFSET;
+  Serial.print("Pressure: ");
+  Serial.println(pV);
+  Serial.print("Pressure (offset): ");
+  Serial.println(p);
+}
+
+void sendSensorData() {
+
+}
+
+void showPageMoisture() {
   // Clear display
   u8g2.clearDisplay();
 
@@ -140,15 +197,6 @@ void showPageMoisture() {
 }
 
 void showPageTemperature() {
-  // BME280
-  float  t, tV;
-  tV = bme.readTemperature();
-  t = tV - TEMPERATURE_OFFSET;
-  Serial.print("Temperature: ");
-  Serial.println(tV);
-  Serial.print("Temperature (offset): ");
-  Serial.println(t);
-
   // Clear display
   u8g2.clearDisplay();
 
@@ -175,15 +223,6 @@ void showPageTemperature() {
 }
 
 void showPageHumidity() {
-  // BME280
-  float  h, hV;
-  hV = bme.readHumidity();
-  h = hV - HUMIDITY_OFFSET;
-  Serial.print("Humidity: ");
-  Serial.println(hV);
-  Serial.print("Humidity (offeset): ");
-  Serial.println(h);
-
   // Clear display
   u8g2.clearDisplay();
 
@@ -210,15 +249,6 @@ void showPageHumidity() {
 }
 
 void showPagePressure() {
-  // BME280
-  float  p, pV;
-  pV = bme.readPressure() / 100.F;
-  p = pV - PRESSURE_OFFSET;
-  Serial.print("Pressure: ");
-  Serial.println(pV);
-  Serial.print("Pressure (offset): ");
-  Serial.println(p);
-
   // Clear display
   u8g2.clearDisplay();
 
