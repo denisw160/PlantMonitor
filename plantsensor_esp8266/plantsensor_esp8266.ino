@@ -1,6 +1,7 @@
 #include <Wire.h>
 #include <SPI.h>
 #include <ESP8266WiFi.h>
+#include <PubSubClient.h>
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BME280.h>
 #include <Arduino.h>
@@ -13,6 +14,8 @@
 // PlantSensor for the PlantMonitor
 // Used ESP8266 with 0.91" OLED Display (128x32)
 // Use CPU frequency 160MHz and Flash Size 4M (3M SPIFFS)
+//
+// For MQTT change PubSubClient.h MQTT_MAX_PACKET_SIZE to 256!
 //
 // *** Wireing plan ***
 // Capacitive Soil Moisture Sensor -> ESP8266
@@ -27,7 +30,8 @@
 // SCL -> D1
 
 // TODO
-// - Improve configuration via WiFiManager
+//  - Add SSL Support
+//  - Improve configuration via WiFiManager
 
 
 // U8g2 Contructor List (Frame Buffer)
@@ -59,8 +63,12 @@ int page = 0;
 int mV;
 float m, t, tV, h, hV, p, pV;
 
+// MQTT client
+WiFiClient wiFiClient;
+PubSubClient mqttClient(wiFiClient);
+
 // MQTT values
-String mqttId;
+String mqttId = "PlantSensor";
 
 void setup() {
   // Initalize serial communicaton at 115200 bits per second
@@ -108,12 +116,14 @@ void setup() {
     Serial.println(WiFi.hostname());
     Serial.print("WiFi IP-Adress: ");
     Serial.println(WiFi.localIP());
+
+    // Setup MQTT
+    mqttId = mqttId + "_" + WiFi.hostname();
+    mqttClient.setServer(MQTT_SERVER, MQTT_PORT);
   }
   else {
     Serial.println("failed!");
   }
-  // Set MQTT ID
-  mqttId = "PlantSensor_" + WiFi.hostname();
 }
 
 void loop() {
@@ -183,7 +193,32 @@ void readSensors() {
 }
 
 void sendSensorData() {
+  // Connect or reconnect to broker
+  if (!mqttClient.connected()) {
+    Serial.print("Connecting to MQTT...");
+    if (mqttClient.connect((char*)mqttId.c_str(), MQTT_USER, MQTT_PASSWORD)) {
+      Serial.println("connected");
+    } else {
+      Serial.print("failed with state ");
+      Serial.println(mqttClient.state());
+      return;
+    }
+  }
 
+  // Sending MQTT message
+  // Original structure: {"temperature": 25.89, "humidity": 42.25, "pressure": 1004.061, "moisture": 35.65, "moisture_raw": 658}
+  const String message = "{\"temperature\": " + String(t)
+                         + ", \"humidity\": " + String(h)
+                         + ", \"pressure\": " + String(p)
+                         + ", \"moisture\": " + String(m)
+                         + ", \"moisture_raw\": " + String(mV)
+                         + "}";
+  const char *buf = (char*)message.c_str();
+  mqttClient.publish(MQTT_TOPIC, buf);
+  Serial.print("Message send: ");
+  Serial.println(message);
+  Serial.print("Max size: ");
+  Serial.println(MQTT_MAX_PACKET_SIZE);
 }
 
 void showPageMoisture() {
