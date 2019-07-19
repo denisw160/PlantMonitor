@@ -12,6 +12,7 @@
 
 // PlantSensor for the PlantMonitor
 // Used ESP8266 with 0.91" OLED Display (128x32)
+// Use CPU frequency 160MHz and Flash Size 4M (3M SPIFFS)
 //
 // *** Wireing plan ***
 // Capacitive Soil Moisture Sensor -> ESP8266
@@ -90,7 +91,7 @@ void setup() {
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   Serial.print("Connecting to WiFi...");
 
-  u8g2.clearDisplay();
+  u8g2.clearBuffer();
   u8g2.setFont(u8g2_font_crox4hb_tf);
   u8g2.drawStr(0, 23, "Connecting...");
   u8g2.sendBuffer();
@@ -116,24 +117,30 @@ void setup() {
 }
 
 void loop() {
+  // Read and updates the data from the sensors
   readSensors();
 
+  // Show one of the sensor values on the display
   Serial.print("Show next page: ");
   Serial.println(page);
-  if (page == 0) {
-    showPageMoisture();
-    page = 1;
-  } else if (page == 1) {
-    showPageTemperature();
-    page = 2;
-  } else if (page == 2) {
-    showPageHumidity();
-    page = 3;
-  } else {
-    showPagePressure();
-    page = 0;
-  }
+  u8g2.firstPage();
+  do {
+    if (page == 0) {
+      showPageMoisture();
+      page = 1;
+    } else if (page == 1) {
+      showPageTemperature();
+      page = 2;
+    } else if (page == 2) {
+      showPageHumidity();
+      page = 3;
+    } else {
+      showPagePressure();
+      page = 0;
+    }
+  } while ( u8g2.nextPage() );
 
+  // Send the sensor data to the server
   Serial.print("WiFi connection status: ");
   Serial.println(WiFi.status());
   if (WiFi.status() == WL_CONNECTED) {
@@ -180,9 +187,6 @@ void sendSensorData() {
 }
 
 void showPageMoisture() {
-  // Clear display
-  u8g2.clearDisplay();
-
   // Show Icon
   u8g2.drawXBMP(
     0,
@@ -200,15 +204,9 @@ void showPageMoisture() {
   strcat(buf,  value);
   strcat(buf, " %");
   u8g2.drawStr(32, 22, buf);
-
-  // Update display
-  u8g2.sendBuffer();
 }
 
 void showPageTemperature() {
-  // Clear display
-  u8g2.clearDisplay();
-
   // Show Icon
   u8g2.drawXBMP(
     0,
@@ -226,15 +224,9 @@ void showPageTemperature() {
   strcat(buf,  value);
   strcat(buf, " °C");
   u8g2.drawUTF8(32, 22, buf);
-
-  // Update display
-  u8g2.sendBuffer();
 }
 
 void showPageHumidity() {
-  // Clear display
-  u8g2.clearDisplay();
-
   // Show Icon
   u8g2.drawXBMP(
     0,
@@ -252,15 +244,9 @@ void showPageHumidity() {
   strcat(buf,  value);
   strcat(buf, " %");
   u8g2.drawStr(32, 22, buf);
-
-  // Update display
-  u8g2.sendBuffer();
 }
 
 void showPagePressure() {
-  // Clear display
-  u8g2.clearDisplay();
-
   // Show Icon
   u8g2.drawXBMP(
     0,
@@ -278,7 +264,4 @@ void showPagePressure() {
   strcat(buf,  value);
   strcat(buf, " hPa");
   u8g2.drawStr(32, 22, buf);
-
-  // Update display
-  u8g2.sendBuffer();
 }
