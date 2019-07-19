@@ -8,10 +8,10 @@
 
 
 // PlantSensor for the PlantMonitor
-// Used ESP8266 with 0.91" OLED Display
+// Used ESP8266 with 0.91" OLED Display (128x32)
 //
 // *** Wireing plan ***
-// Hygrometer -> ESP8266
+// Capacitive Soil Moisture Sensor -> ESP8266
 // VCC -> +5V
 // GND -> GND
 // A0 -> A0
@@ -22,22 +22,35 @@
 // SDA -> D2
 // SCL -> D1
 
+// TODO
+// - Add WiFi and MQTT support
+// - Improve configuration via WiFiManager
+
+
 // U8g2 Contructor List (Frame Buffer)
 // The complete list is available here: https://github.com/olikraus/u8g2/wiki/u8g2setupcpp
 U8G2_SSD1306_128X32_UNIVISION_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);  // Adafruit ESP8266/32u4/ARM Boards + FeatherWing OLED
 
-// assign the hygrometer to pins
-#define HYGROMETER_ANALOG A0
+// Assign the Moisture Sensor to pins
+#define MOISTURE_ANALOG A0
 
-// assign the bme to pins
+// Parameter for Moisture Sensor
+const float MOISTURE_MAX = 1023.0;
+
+// Assign the BME to pins
 #define BME_SDA D2
 #define BME_SCL D1
 
+// Parameter for BME Sensor
+const float TEMPERATURE_OFFSET = 0.0;
+const float HUMIDITY_OFFSET = 0.0;
+const float PRESSURE_OFFSET = 0.0;
 
+// BME Sensor
 Adafruit_BME280 bme; // I2C
 
 void setup() {
-  // Initalize serial communicaton at 115200 bits per second:
+  // Initalize serial communicaton at 115200 bits per second
   Serial.begin(115200);
   delay(10);
 
@@ -60,24 +73,34 @@ void setup() {
 }
 
 void loop() {
-  // Hygrometer
+  // Moisture Sensor
   // Read the input on analog pin 0
-  int mV = analogRead(HYGROMETER_ANALOG);
-  float m = (100.0 - (mV / 1024.0) * 100.0);
+  int mV = analogRead(MOISTURE_ANALOG);
+  float m = (100.0 - (mV / MOISTURE_MAX) * 100.0);
   Serial.print("Moisture: ");
+  Serial.println(mV);
+  Serial.print("Moisture (%): ");
   Serial.println(m);
 
   // BME280
-  float h, t, p;
-  h = bme.readHumidity();
-  t = bme.readTemperature();
-  p = bme.readPressure() / 100.F;
-
+  float h, hV, t, tV, p, pV;
+  hV = bme.readHumidity();
+  tV = bme.readTemperature();
+  pV = bme.readPressure() / 100.F;
+  h = hV - HUMIDITY_OFFSET;
+  t = tV - TEMPERATURE_OFFSET;
+  p = pV - PRESSURE_OFFSET;
   Serial.print("Temperature: ");
+  Serial.println(tV);
+  Serial.print("Temperature (offset): ");
   Serial.println(t);
   Serial.print("Humidity: ");
+  Serial.println(hV);
+  Serial.print("Humidity (offeset): ");
   Serial.println(h);
   Serial.print("Pressure: ");
+  Serial.println(pV);
+  Serial.print("Pressure (offset): ");
   Serial.println(p);
 
   // Output to display
@@ -108,5 +131,6 @@ void loop() {
   u8g2.drawStr(0, 30, buf);
   u8g2.sendBuffer();
 
-  delay(30000);   // wait 30 sec
+  //delay(30000);   // wait 30 sec
+  delay(5000);   // wait 5 sec
 }
