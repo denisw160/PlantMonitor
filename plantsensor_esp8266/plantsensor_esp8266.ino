@@ -4,6 +4,7 @@
 #include <PubSubClient.h>
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BME280.h>
+#include <BH1750FVI.h>
 #include <Arduino.h>
 #include <U8g2lib.h>
 
@@ -19,15 +20,22 @@
 //
 // *** Wireing plan ***
 // Capacitive Soil Moisture Sensor -> ESP8266
-// VCC -> +5V
-// GND -> GND
-// A0 -> A0
+//  VCC     -> +5V
+//  GND     -> GND
+//  A0      -> A0
 //
-// BME280 -> ESP8266
-// VCC -> +3.3V
-// GND -> GND
-// SDA -> D2
-// SCL -> D1
+// BME280   -> ESP8266
+//  VCC     -> +3.3V
+//  GND     -> GND
+//  SDA     -> D2
+//  SCL     -> D1
+//
+// BH1750   -> ESP8266
+//  VCC     -> 3V3
+//  GND     -> GND
+//  SDA     -> D2
+//  SCL     -> D1
+//  ADDR    -> RX
 
 // TODO
 //  - Add SSL Support
@@ -56,11 +64,18 @@ const float PRESSURE_OFFSET = 0.0;
 // BME Sensor
 Adafruit_BME280 bme; // I2C
 
+// BH1750 Sensor
+uint8_t ADDRESSPIN = 13;
+BH1750FVI::eDeviceAddress_t DEVICEADDRESS = BH1750FVI::k_DevAddress_H;
+BH1750FVI::eDeviceMode_t DEVICEMODE = BH1750FVI::k_DevModeContHighRes;
+BH1750FVI lightSensor(ADDRESSPIN, DEVICEADDRESS, DEVICEMODE);
+
 // Page selection
 int page = 0;
 
 // Sensor values
 int mV;
+uint16_t l;
 float m, t, tV, h, hV, p, pV;
 
 // MQTT client
@@ -87,14 +102,21 @@ void setup() {
   u8g2.sendBuffer();                  // transfer internal memory to the display
   delay(1000);
 
-  // Initalize bme pins
+  // Initalize bme280
   Wire.begin(BME_SDA, BME_SCL);
   Wire.setClock(100000);
-  Serial.println("Starting BME280 sensor ...");
+  Serial.print("Starting BME280 sensor ...");
   if (!bme.begin(0x76)) {
     Serial.println("Could not find a valid BME280 sensor, check wiring!");
     while (1);
+  } else {
+    Serial.println("ready!");
   }
+
+  // Initialize bh1750
+  Serial.print("Starting BH1750 sensor ...");
+  lightSensor.begin();
+  Serial.println("ready!");
 
   // Connecting to WiFi
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
@@ -145,8 +167,11 @@ void loop() {
     } else if (page == 2) {
       showPageHumidity();
       page = 3;
-    } else {
+    } else if (page == 3) {
       showPagePressure();
+      page = 4;
+    } else {
+      showPageLight();
       page = 0;
     }
   } while ( u8g2.nextPage() );
@@ -192,6 +217,13 @@ void readSensors() {
   Serial.println(pV);
   Serial.print("Pressure (offset): ");
   Serial.println(p);
+
+  // BH1750
+  l = lightSensor.GetLightIntensity();
+  Serial.print("Light = ");
+  Serial.print(l);
+  Serial.println(" lux");
+  Serial.println();
 }
 
 void verifyConnection() {
@@ -234,12 +266,13 @@ void sendSensorData() {
   }
 
   // Sending MQTT message
-  // Original structure: {"temperature": 25.89, "humidity": 42.25, "pressure": 1004.061, "moisture": 35.65, "moisture_raw": 658}
+  // Original structure: {"temperature": 25.89, "humidity": 42.25, "pressure": 1004.061, "moisture": 35.65, "moisture_raw": 658, "light": 152}
   const String message = "{\"temperature\": " + String(t)
                          + ", \"humidity\": " + String(h)
                          + ", \"pressure\": " + String(p)
                          + ", \"moisture\": " + String(m)
                          + ", \"moisture_raw\": " + String(mV)
+                         + ", \"light\": " + String(l)
                          + "}";
   const char *buf = (char*)message.c_str();
   mqttClient.publish(MQTT_TOPIC, buf);
@@ -247,6 +280,9 @@ void sendSensorData() {
   Serial.println(message);
   Serial.print("Max size: ");
   Serial.println(MQTT_MAX_PACKET_SIZE);
+  if (MQTT_MAX_PACKET_SIZE < 256) {
+    Serial.println("ERROR: package size too small, check PubSubClient.h for this setting");
+  }
 }
 
 void showPageMoisture() {
@@ -326,5 +362,25 @@ void showPagePressure() {
   dtostrf(p, 6, 1, value);
   strcat(buf,  value);
   strcat(buf, " hPa");
+  u8g2.drawStr(32, 22, buf);
+}
+
+void showPageLight() {
+  // Show Icon
+  u8g2.drawXBMP(
+    0,
+    (u8g2.getDisplayHeight() - ICON_HEIGHT) / 2,
+    ICON_WIDTH,
+    ICON_HEIGHT,
+    LIGHT_ICON);
+
+  // Show Text
+  char buf[128];
+  char value[10];
+  u8g2.setFont(u8g2_font_helvB12_tf);
+  strcpy(buf, "");
+  dtostrf(l, 4, 0, value);
+  strcat(buf,  value);
+  strcat(buf, " lux");
   u8g2.drawStr(32, 22, buf);
 }
