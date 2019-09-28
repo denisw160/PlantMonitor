@@ -234,7 +234,14 @@ void sendSensorData() {
   // Connect or reconnect to broker
   if (!mqttClient.connected()) {
     Serial.print("Connecting to MQTT...");
-    if (mqttClient.connect((char*)mqttId.c_str(), MQTT_USER, MQTT_PASSWORD)) {
+    boolean connected = false;
+    if (MQTT_USER == "") {
+      Serial.print("without auth... ");
+      connected =   mqttClient.connect((char*)mqttId.c_str());
+    } else {
+      connected =   mqttClient.connect((char*)mqttId.c_str(), MQTT_USER, MQTT_PASSWORD);
+    }
+    if (connected) {
       Serial.println("connected");
     } else {
       Serial.print("failed with state ");
