@@ -1,50 +1,52 @@
-#include <Wire.h>
-#include <SPI.h>
+/**************************************************************************
+
+  PlantSensor ESP8266 NodeMCU with Capacitive Soil Moisture Sensor, BME280
+  and BH1750.
+
+  ** Important **
+   - For MQTT change PubSubClient.h MQTT_MAX_PACKET_SIZE to 256!
+
+  ** Wireing plan **
+    Capacitive Soil Moisture Sensor -> ESP8266
+      VCC     -> +5V
+      GND     -> GND
+      A0      -> A0
+
+    BME280   -> ESP8266
+      VCC     -> +3.3V
+      GND     -> GND
+      SDA     -> D2
+      SCL     -> D1
+
+    BH1750   -> ESP8266
+      VCC     -> 3V3
+      GND     -> GND
+      SDA     -> D2
+      SCL     -> D1
+      ADDR    -> RX
+
+   ** TODO **
+      - Add SSL Support
+      - Improve configuration via WiFiManager and remove settings
+
+ **************************************************************************/
+
+
+// Common
 #include <ESP8266WiFi.h>
+
+// MQTT
 #include <PubSubClient.h>
+
+// Sensors
+#include <Wire.h>
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BME280.h>
 #include <BH1750FVI.h>
-#include <Arduino.h>
-#include <U8g2lib.h>
+//#include <Arduino.h>
 
-#include "plantsensor_icons.h"
 #include "plantsensor_settings.h"
 
-
-// PlantSensor for the PlantMonitor
-// Used ESP8266 with 0.91" OLED Display (128x32)
-// Use CPU frequency 160MHz and Flash Size 4M (3M SPIFFS)
-//
-// For MQTT change PubSubClient.h MQTT_MAX_PACKET_SIZE to 256!
-//
-// *** Wireing plan ***
-// Capacitive Soil Moisture Sensor -> ESP8266
-//  VCC     -> +5V
-//  GND     -> GND
-//  A0      -> A0
-//
-// BME280   -> ESP8266
-//  VCC     -> +3.3V
-//  GND     -> GND
-//  SDA     -> D2
-//  SCL     -> D1
-//
-// BH1750   -> ESP8266
-//  VCC     -> 3V3
-//  GND     -> GND
-//  SDA     -> D2
-//  SCL     -> D1
-//  ADDR    -> RX
-
-// TODO
-//  - Add SSL Support
-//  - Improve configuration via WiFiManager
-
-
-// U8g2 Contructor List (Frame Buffer)
-// The complete list is available here: https://github.com/olikraus/u8g2/wiki/u8g2setupcpp
-U8G2_SSD1306_128X32_UNIVISION_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);  // Adafruit ESP8266/32u4/ARM Boards + FeatherWing OLED
 
 // Assign the Moisture Sensor to pins
 #define MOISTURE_ANALOG A0
@@ -70,37 +72,34 @@ BH1750FVI::eDeviceAddress_t DEVICEADDRESS = BH1750FVI::k_DevAddress_H;
 BH1750FVI::eDeviceMode_t DEVICEMODE = BH1750FVI::k_DevModeContHighRes;
 BH1750FVI lightSensor(ADDRESSPIN, DEVICEADDRESS, DEVICEMODE);
 
-// Page selection
-int page = 0;
-
 // Sensor values
 int mV;
 uint16_t l;
 float m, t, tV, h, hV, p, pV;
 
 // MQTT client
-//WiFiClient wiFiClient; // for unencrypted
-BearSSL::WiFiClientSecure wifiClient; // for encrypted with SSL
-PubSubClient mqttClient(wifiClient);
+#if MQTT_SSL
+BearSSL::WiFiClientSecure wiFiClient; // for encrypted with SSL
+#else
+WiFiClient wiFiClient; // for unencrypted
+#endif
+PubSubClient mqttClient(wiFiClient);
 
 // MQTT values
 String mqttId = "PlantSensor";
+
+// Generally, you should use "unsigned long" for variables that hold time
+// The value will quickly become too large for an int to store
+unsigned long previousMillis = 0;        // will store last time a message was send
+
+// constants won't change:
+const long interval = 30000;           // interval for sending a message (milliseconds)
+
 
 void setup() {
   // Initalize serial communicaton at 115200 bits per second
   Serial.begin(115200);
   delay(10);
-
-  // Initalize oled display
-  u8g2.begin();
-  u8g2.enableUTF8Print();
-
-  // Show startup message
-  u8g2.clearBuffer();                 // clear the internal memory
-  u8g2.setFont(u8g2_font_crox4hb_tf); // choose a suitable font
-  u8g2.drawStr(0, 23, "Booting...");  // write something to the internal memory
-  u8g2.sendBuffer();                  // transfer internal memory to the display
-  delay(1000);
 
   // Initalize bme280
   Wire.begin(BME_SDA, BME_SCL);
@@ -121,11 +120,6 @@ void setup() {
   // Connecting to WiFi
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   Serial.print("Connecting to WiFi...");
-
-  u8g2.clearBuffer();
-  u8g2.setFont(u8g2_font_crox4hb_tf);
-  u8g2.drawStr(0, 23, "Connecting...");
-  u8g2.sendBuffer();
   int c = 0;
   while (WiFi.status() != WL_CONNECTED && c < 50)
   {
@@ -133,59 +127,41 @@ void setup() {
     Serial.print(".");
     c = c + 1;
   }
+
   if (WiFi.status() == WL_CONNECTED) {
     Serial.println("done!");
     Serial.print("Hostname: ");
     Serial.println(WiFi.hostname());
     Serial.print("WiFi IP-Adress: ");
     Serial.println(WiFi.localIP());
-
-    // Setup MQTT
-    mqttId = mqttId + "_" + WiFi.hostname();
-    mqttClient.setServer(MQTT_SERVER, MQTT_PORT);
   }
   else {
     Serial.println("failed!");
   }
+
+  // Setup MQTT
+  mqttId = mqttId + "_" + WiFi.hostname();
+  mqttClient.setServer(MQTT_SERVER, MQTT_PORT);
 }
 
 void loop() {
-  // Read and updates the data from the sensors
-  readSensors();
+  unsigned long currentMillis = millis();
+  if (currentMillis - previousMillis >= interval) {
+    previousMillis = currentMillis;
 
-  // Show one of the sensor values on the display
-  Serial.print("Show next page: ");
-  Serial.println(page);
-  u8g2.firstPage();
-  do {
-    if (page == 0) {
-      showPageMoisture();
-      page = 1;
-    } else if (page == 1) {
-      showPageTemperature();
-      page = 2;
-    } else if (page == 2) {
-      showPageHumidity();
-      page = 3;
-    } else if (page == 3) {
-      showPagePressure();
-      page = 4;
-    } else {
-      showPageLight();
-      page = 0;
+    // Read and updates the data from the sensors
+    readSensors();
+
+    // Send the sensor data to the server
+    Serial.print("WiFi connection status: ");
+    Serial.println(WiFi.status());
+    if (WiFi.status() == WL_CONNECTED) {
+#if MQTT_SSL
+      verifyConnection(); // only for encrypted with SSL
+#endif
+      sendSensorData();
     }
-  } while ( u8g2.nextPage() );
-
-  // Send the sensor data to the server
-  Serial.print("WiFi connection status: ");
-  Serial.println(WiFi.status());
-  if (WiFi.status() == WL_CONNECTED) {
-    verifyConnection(); // for encrypted with SSL
-    sendSensorData();
   }
-
-  delay(30000);   // wait 30 sec (production)
-  //delay(5000);   // wait 5 sec (for testing)
 }
 
 void readSensors() {
@@ -226,21 +202,22 @@ void readSensors() {
   Serial.println();
 }
 
+#if MQTT_SSL
 void verifyConnection() {
-  if (mqttClient.connected() || wifiClient.connected()) return; // Already connected
+  if (mqttClient.connected() || wiFiClient.connected()) return; // Already connected
 
   Serial.print("Checking SSL@");
   Serial.print(MQTT_SERVER);
   Serial.print("...");
 
-  wifiClient.setInsecure();
-  if (!wifiClient.connect(MQTT_SERVER, MQTT_PORT)) {
+  wiFiClient.setInsecure();
+  if (!wiFiClient.connect(MQTT_SERVER, MQTT_PORT)) {
     Serial.println("failed.");
     return;
   } else {
     Serial.println("ok.");
   }
-  if (wifiClient.verify(MQTT_FPRINT, MQTT_SERVER)) {
+  if (wiFiClient.verify(MQTT_FPRINT, MQTT_SERVER)) {
     Serial.println("Connection is secure.");
   } else {
     Serial.println("Connection insecure! Rebooting.");
@@ -248,9 +225,10 @@ void verifyConnection() {
     ESP.restart();
   }
 
-  wifiClient.stop();
+  wiFiClient.stop();
   delay(100);
 }
+#endif
 
 void sendSensorData() {
   // Connect or reconnect to broker
@@ -283,104 +261,4 @@ void sendSensorData() {
   if (MQTT_MAX_PACKET_SIZE < 256) {
     Serial.println("ERROR: package size too small, check PubSubClient.h for this setting");
   }
-}
-
-void showPageMoisture() {
-  // Show Icon
-  u8g2.drawXBMP(
-    0,
-    (u8g2.getDisplayHeight() - ICON_HEIGHT) / 2,
-    ICON_WIDTH,
-    ICON_HEIGHT,
-    MOISTURE_ICON);
-
-  // Show Text
-  char buf[128];
-  char value[10];
-  u8g2.setFont(u8g2_font_helvB12_tf);
-  strcpy(buf, "");
-  dtostrf(m, 6, 2, value);
-  strcat(buf,  value);
-  strcat(buf, " %");
-  u8g2.drawStr(32, 22, buf);
-}
-
-void showPageTemperature() {
-  // Show Icon
-  u8g2.drawXBMP(
-    0,
-    (u8g2.getDisplayHeight() - ICON_HEIGHT) / 2,
-    ICON_WIDTH,
-    ICON_HEIGHT,
-    TEMPERATURE_ICON);
-
-  // Show Text
-  char buf[128];
-  char value[10];
-  u8g2.setFont(u8g2_font_helvB12_tf);
-  strcpy(buf, "");
-  dtostrf(t, 6, 2, value);
-  strcat(buf,  value);
-  strcat(buf, " °C");
-  u8g2.drawUTF8(32, 22, buf);
-}
-
-void showPageHumidity() {
-  // Show Icon
-  u8g2.drawXBMP(
-    0,
-    (u8g2.getDisplayHeight() - ICON_HEIGHT) / 2,
-    ICON_WIDTH,
-    ICON_HEIGHT,
-    HUMIDITY_ICON);
-
-  // Show Text
-  char buf[128];
-  char value[10];
-  u8g2.setFont(u8g2_font_helvB12_tf);
-  strcpy(buf, "");
-  dtostrf(h, 6, 2, value);
-  strcat(buf,  value);
-  strcat(buf, " %");
-  u8g2.drawStr(32, 22, buf);
-}
-
-void showPagePressure() {
-  // Show Icon
-  u8g2.drawXBMP(
-    0,
-    (u8g2.getDisplayHeight() - ICON_HEIGHT) / 2,
-    ICON_WIDTH,
-    ICON_HEIGHT,
-    PRESSURE_ICON);
-
-  // Show Text
-  char buf[128];
-  char value[10];
-  u8g2.setFont(u8g2_font_helvB12_tf);
-  strcpy(buf, "");
-  dtostrf(p, 6, 1, value);
-  strcat(buf,  value);
-  strcat(buf, " hPa");
-  u8g2.drawStr(32, 22, buf);
-}
-
-void showPageLight() {
-  // Show Icon
-  u8g2.drawXBMP(
-    0,
-    (u8g2.getDisplayHeight() - ICON_HEIGHT) / 2,
-    ICON_WIDTH,
-    ICON_HEIGHT,
-    LIGHT_ICON);
-
-  // Show Text
-  char buf[128];
-  char value[10];
-  u8g2.setFont(u8g2_font_helvB12_tf);
-  strcpy(buf, "");
-  dtostrf(l, 4, 0, value);
-  strcat(buf,  value);
-  strcat(buf, " lux");
-  u8g2.drawStr(32, 22, buf);
 }

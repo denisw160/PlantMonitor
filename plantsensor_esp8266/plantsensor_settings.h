@@ -8,6 +8,7 @@ const char *WIFI_SSID     = "your-wifi";
 const char *WIFI_PASSWORD = "your-password";
 
 // Set your MQTT parameters / MQTT_USER = "", then no login
+#define     MQTT_SSL          false
 const char *MQTT_SERVER    = "your mqtt server";
 const int   MQTT_PORT      = 1883;
 const char *MQTT_USER      = "";
